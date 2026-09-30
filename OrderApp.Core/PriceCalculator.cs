@@ -14,7 +14,7 @@ public static class PriceCalculator
         if (qty <= 0) throw new ArgumentException("數量必須大於 0", nameof(qty));
 
         decimal total = price * qty;
-        if (total >= DiscountThreshold) total *= 0.9m;   // 滿千打九折
+        if (total > DiscountThreshold) total *= 0.9m;   // 滿千打九折
         if (isVip) total *= 0.95m;                       // VIP 再打 95 折
         return Math.Round(total, 0, MidpointRounding.AwayFromZero);
     }
