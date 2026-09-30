@@ -1,0 +1,62 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']            # 推送 v1.0.0 這類 tag 時觸發發佈
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ========== CI：每次 push / PR 都跑 ==========
+  ci:
+    runs-on: windows-latest   # WinForms 只能在 Windows 上建置
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: 還原套件
+        run: dotnet restore
+
+      - name: 編譯（有 warning 也算失敗）
+        run: dotnet build -c Release --no-restore -warnaserror
+
+      - name: 執行單元測試
+        run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
+
+  # ========== CD：只有推送版本 tag 才發佈 ==========
+  release:
+    needs: ci                                    # CI 沒過就不會執行
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write                            # 建立 Release 需要寫入權限
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: 從 tag 取出版本號（v1.0.0 → 1.0.0）
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: 打包成單一 exe
+        run: >
+          dotnet publish OrderApp.WinForms -c Release -r win-x64
+          --self-contained -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ env.VERSION }}
+          -o publish
+
+      - name: 壓縮
+        run: Compress-Archive -Path publish/OrderApp.WinForms.exe -DestinationPath OrderApp-${{ github.ref_name }}.zip
+
+      - name: 發佈到 GitHub Releases
+        run: gh release create ${{ github.ref_name }} OrderApp-${{ github.ref_name }}.zip --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
